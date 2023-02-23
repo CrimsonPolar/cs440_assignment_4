@@ -31,6 +31,7 @@ class LinearHashIndex {
 
 private:
     const int BLOCK_SIZE = 4096;
+    const int RECORD_SIZE = 716;
 
     vector<int> blockDirectory; // Map the least-significant-bits of h(id) to a bucket location in EmployeeIndex (e.g., the jth bucket)
                                 // can scan to correct bucket using j*BLOCK_SIZE as offset (using seek function)
@@ -40,6 +41,10 @@ private:
     int numRecords;    // Records currently in index. Used to test whether to increase n
     int nextFreeBlock; // Next place to write a bucket. Should increment it by BLOCK_SIZE whenever a bucket is written to EmployeeIndex
     string fName;      // Name of index file
+
+
+    // BLOCK STRUCTURE
+
 
     // Insert new record into index
     void insertRecord(Record record) {
@@ -69,7 +74,13 @@ public:
 
         // Create your EmployeeIndex file and write out the initial 4 buckets
         // make sure to account for the created buckets by incrementing nextFreeBlock appropriately
-      
+        FILE * iFile = fopen(fName.c_str(), "w+b");
+        fseek(iFile, 4096 * n - 1, SEEK_SET);
+        fputc(0, iFile);
+
+        nextFreeBlock = 4096*n;
+
+        fclose(iFile);
     }
 
     // Read csv file and add records to the index
