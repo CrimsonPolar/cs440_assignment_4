@@ -74,6 +74,29 @@ public:
 
     // Read csv file and add records to the index
     void createFromFile(string csvFName) {
+        // Open the csv file
+        ifstream csvFile(csvFName);
+        if (!csvFile.is_open()) {
+            throw invalid_argument("Could not open file");
+        }
+
+        // Read the csv file line by line
+        string line;
+        while (getline(csvFile, line)) {
+            // Parse the line
+            stringstream ss(line);
+            string field;
+            vector<std::string> fields;
+            while (getline(ss, field, ',')) {
+                fields.push_back(field);
+            }
+
+            // Create a record from the line
+            Record record(fields);
+
+            // Add the record to the index
+            insertRecord(record);
+        }
         
     }
 
