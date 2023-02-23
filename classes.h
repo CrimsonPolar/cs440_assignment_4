@@ -44,10 +44,24 @@ private:
 
 
     // BLOCK STRUCTURE
+    // 1st byte is num records
+    // 2nd byte is offset to overflow block
+    // Records start at 3rd byte
+    //  - 5 records per block
+    //  - 716 bytes each
 
 
     // Insert new record into index
     void insertRecord(Record record) {
+
+        // Hash function
+        int hashed = record.id % 256;
+        // Get i least significant bits
+        int LSBs = hashed & ((1 << i) - 1);
+        // Adjusting MSB if i least significant bits >= n
+        if(LSBs >= n){
+            LSBs -= (1 << (i - 1));
+        }
 
         // No records written to index yet
         if (numRecords == 0) {
@@ -56,7 +70,7 @@ private:
         }
 
         // Add record to the index in the correct block, creating a overflow block if necessary
-
+        char block1[4096];
 
         // Take neccessary steps if capacity is reached:
 		// increase n; increase i (if necessary); place records in the new bucket that may have been originally misplaced due to a bit flip
@@ -77,10 +91,13 @@ public:
         FILE * iFile = fopen(fName.c_str(), "w+b");
         fseek(iFile, 4096 * n - 1, SEEK_SET);
         fputc(0, iFile);
+        fclose(iFile);
 
         nextFreeBlock = 4096*n;
 
-        fclose(iFile);
+        for(int j = 0; j < n; j++){
+            blockDirectory.push_back(j);
+        }
     }
 
     // Read csv file and add records to the index
