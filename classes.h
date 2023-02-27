@@ -8,6 +8,7 @@ using namespace std;
 
 class Record {
 public:
+    // ids are always 8 digits
     int id, manager_id;
     std::string bio, name;
 
@@ -53,21 +54,27 @@ private:
     //  - 5 records per block
     //  - 716 bytes each
 
+    inline int hash(const int id) {
+        return id % 256;
+    }
+
+    int getBlock(const int id) {
+        int hashed = hash(id);
+        int LSBs = hashed & ((1 << i) - 1);
+
+        if (LSBs >= n)
+        {
+            LSBs -= (1 << (i - 1));
+        }
+
+        return blockDirectory.at(LSBs);
+    }
 
     // Insert new record into index
     void insertRecord(Record record) {
 
-        // Hash function
-        int hashed = record.id % 256;
-        // Get i least significant bits
-        int LSBs = hashed & ((1 << i) - 1);
-        // Adjusting MSB if i least significant bits >= n
-        if(LSBs >= n){
-            LSBs -= (1 << (i - 1));
-        }
-
         // Add record to the index in the correct block, creating a overflow block if necessary
-        int block = blockDirectory.at(LSBs);
+        int block = getBlock(record.id);
         char blockData[BLOCK_SIZE];
         FILE * index = fopen(fName.c_str(), "r+b");
 
@@ -185,5 +192,31 @@ public:
     // Given an ID, find the relevant record and print it
     Record findRecordById(int id) {
         
+        // Block to search
+        int block = getBlock(id);
+
+        // Load data from block
+        char blockData[BLOCK_SIZE];
+        FILE * index = fopen(fName.c_str(), "rb");
+        fseek(index, BLOCK_SIZE * block, SEEK_SET);
+        fread(blockData, sizeof(char), BLOCK_SIZE, index);
+        fclose(index);
+
+        // Linear search through block for record with matching id
+        for(int i = 0; i < blockData[0]; i++){
+            if (blockData[3 + i * RECORD_SIZE] == id) {
+                Record record = Record(
+                    std::vector<std::string>{
+                        std::to_string(id),
+                        std::to_string(blockData[4 + i * RECORD_SIZE]),
+                        std::string(blockData + 5 + i * RECORD_SIZE, 200),
+                        std::string(blockData + 205 + i * RECORD_SIZE, 500)
+                    }
+                );
+                
+                record.print();
+                return record;
+            }
+        }
     }
 };
