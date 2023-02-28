@@ -109,10 +109,10 @@ private:
             //TODO: check entries for if they're misplaced as per slides 61, 62 of indexing.pdf
             for(int j = 0; j < n; j++){
                 int overflow = 0;
-                // for every entry
                 do {
                     fseek(index, BLOCK_SIZE * blockDirectory.at(j + overflow), SEEK_SET);
                     fread(blockData, sizeof(char), BLOCK_SIZE, index);
+                    // for every entry
                     for(int k = 0; k < blockData[0]; k++){
                         int destBlock = getBlock(blockData[2 + RECORD_SIZE * k]);
                         // if the block an record should be hashed to is different to the one it is currently in
