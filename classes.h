@@ -203,10 +203,10 @@ public:
         fclose(index);
 
         // Linear search through block for record with matching id
-        for(int i = 0; i < blockData[0]; i++){
+        for(int i = 0; i < blockData[0]; i++) {
             if (blockData[3 + i * RECORD_SIZE] == id) {
                 Record record = Record(
-                    std::vector<std::string>{
+                    std::vector<std::string> {
                         std::to_string(id),
                         std::to_string(blockData[4 + i * RECORD_SIZE]),
                         std::string(blockData + 5 + i * RECORD_SIZE, 200),
@@ -217,6 +217,17 @@ public:
                 record.print();
                 return record;
             }
+
+            // If this is the last record in the block, check for overflow block
+            if(i == blockData[0] - 1 && blockData[1] != 0) {
+                // Update blockData to overflow block and reset i
+                fseek(index, BLOCK_SIZE * blockData[1], SEEK_SET);
+                fread(blockData, sizeof(char), BLOCK_SIZE, index);
+                i = -1; // i will be incremented to 0 at the end of the loop
+            }
         }
+
+        // If no record found, throw error
+        throw invalid_argument("Record not found");
     }
 };
