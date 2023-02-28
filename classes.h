@@ -9,22 +9,23 @@ using namespace std;
 class Record {
 public:
     // ids are always 8 digits
-    int id, manager_id;
+    unsigned int id, manager_id;
     std::string bio, name;
 
     Record(vector<std::string> fields) {
-        id = stoi(fields[0]);
+        id = stoul(fields[0]);
         name = fields[1];
         bio = fields[2];
-        manager_id = stoi(fields[3]);
+        manager_id = stoul(fields[3]);
     }
 
     void print() {
-        cout << "\tID: " << id << "\n";
+        cout << "\n" << "\tID: " << id << "\n";
         cout << "\tNAME: " << name << "\n";
         cout << "\tBIO: " << bio << "\n";
-        cout << "\tMANAGER_ID: " << manager_id << "\n";
+        cout << "\tMANAGER_ID: " << manager_id << "\n" << "\n";
     }
+
 };
 
 
@@ -71,7 +72,7 @@ private:
     }
 
     void resetBlockMem(char * block){
-        memset(block, 0, BLOCK_SIZE);
+        fill_n(block, BLOCK_SIZE, 0);
     }
 
     // Insert new record into index
@@ -136,15 +137,16 @@ private:
     void printBlock(char * r){
         cout << endl << r[0] << " " << r[1] << endl;
         for(int k = 0; k < r[0]; k++){
-        cout << endl;
-        Record(
-            std::vector<std::string>{
-                std::to_string(r[2 + k * RECORD_SIZE]),
-                std::string(r + 4 + k * RECORD_SIZE, 200),
-                std::string(r + 204 + k * RECORD_SIZE, 500),
-                std::to_string(r[3 + k * RECORD_SIZE])
-            }
-        ).print();}
+            cout << endl;
+            Record(
+                std::vector<std::string>{
+                    to_string(getIntFromBlockData(r, 2 + k * RECORD_SIZE)),
+                    std::string(r + 2 + 16 + k * RECORD_SIZE, 200),
+                    std::string(r + 2 + 216 + k * RECORD_SIZE, 500),
+                    to_string(getIntFromBlockData(r, 2 + 8 + k *RECORD_SIZE))
+                }
+            ).print();
+        }
     }
 
 
@@ -171,7 +173,7 @@ private:
                 // printBlock(blockData);
                 // for every record
                 for(int k = 0; k < blockData[0]; k++){
-                    int destBlock = getBlock(blockData[2 + RECORD_SIZE * k]);
+                    int destBlock = getBlock(getIntFromBlockData(blockData, 2 + k * RECORD_SIZE));
                     // if the block the current record should be hashed to is different to the one it is currently in
                     if(blockDirectory.at(j) != destBlock){
                         // Replace record
@@ -183,10 +185,10 @@ private:
 
                         Record temp = Record(
                             std::vector<std::string>{
-                                std::to_string(blockData[2 + k * RECORD_SIZE]),
-                                std::string(blockData + 4 + k * RECORD_SIZE, 200),
-                                std::string(blockData + 204 + k * RECORD_SIZE, 500),
-                                std::to_string(blockData[3 + k * RECORD_SIZE])
+                                to_string(getIntFromBlockData(blockData, 2 + k * RECORD_SIZE)),
+                                std::string(blockData + 2 + 16 + k * RECORD_SIZE, 200),
+                                std::string(blockData + 2 + 216 + k * RECORD_SIZE, 500),
+                                to_string(getIntFromBlockData(blockData, 2 + 8 + k *RECORD_SIZE))
                             }
                         );
                         // if an overflow block exists
@@ -225,20 +227,21 @@ private:
                             for(int l = k + 1; l < blockData[0] && l <= 5; l++){
                                 temp = Record(
                                     std::vector<std::string>{
-                                        std::to_string(blockData[2 + l * RECORD_SIZE]),
-                                        std::string(blockData + 4 + l * RECORD_SIZE, 200),
-                                        std::string(blockData + 204 + l * RECORD_SIZE, 500),
-                                        std::to_string(blockData[3 + l * RECORD_SIZE])
+                                        to_string(getIntFromBlockData(blockData, 2 + l * RECORD_SIZE)),
+                                        std::string(blockData + 2 + 16 + l * RECORD_SIZE, 200),
+                                        std::string(blockData + 2 + 216 + l * RECORD_SIZE, 500),
+                                        to_string(getIntFromBlockData(blockData, 2 + 8 + l * RECORD_SIZE))
                                     }
                                 );
-                                writeRecord(temp, (blockDirectory.at(j) + overflow), l - 1, index);
+                                writeRecord(temp, blockDirectory.at(j) + overflow, l - 1, index);
                                 
                             }
+                            // ensure loop doesn't break
                             k--;
+
                             // delete records at end just in case
-                            // usually can't be accessed, but erase data
-                            
-                            fseek(index, BLOCK_SIZE * (blockDirectory.at(j) + overflow) + 2 + RECORD_SIZE * (k + 1), SEEK_SET);
+                            // usually can't be accessed, but erase data anyway
+                            fseek(index, BLOCK_SIZE * (blockDirectory.at(j) + overflow) + 2 + RECORD_SIZE * blockData[0], SEEK_SET);
                             for(int l = 0; l < RECORD_SIZE; l++){
                                 fputc(0, index);
                             }
@@ -246,8 +249,8 @@ private:
                         }
                         
                         
-                        // ensure loop doesn't break
-                        //update count in index
+                        
+                        // update count in index
                         fseek(index, BLOCK_SIZE * (blockDirectory.at(j) + overflow), SEEK_SET);
                         fputc(blockData[0] - 1, index);
                         blockData[0]--;
@@ -271,15 +274,41 @@ private:
         }
 
         fseek(index, BLOCK_SIZE * blockNum, SEEK_SET);
-        fputc(recordNum + 1, index);
+        fputc(1 + recordNum, index);
         // "1 +" to adjust for overflow offset var at second byte of block
         fseek(index, 1 + recordNum * RECORD_SIZE, SEEK_CUR);
-        fputc(record.id, index);
-        fputc(record.manager_id, index);
+        writeIntToIndex(index, record.id);
+        writeIntToIndex(index, record.manager_id);
         // Write name and adjust file pointer based on length 
         fputs(record.name.c_str(), index);
-        fseek(index, BLOCK_SIZE * blockNum + 2 + RECORD_SIZE * recordNum + 202, SEEK_SET);
+        fseek(index, BLOCK_SIZE * blockNum + 2 + RECORD_SIZE * recordNum + 216, SEEK_SET);
         fputs(record.bio.c_str(), index);
+    }
+
+    //writes int to index at current position as 8 byte
+    void writeIntToIndex(FILE * index, unsigned int w){
+        for(int i = 0; i < 4; i++){
+            fputc(w & 0xFF, index);
+            w = w >> 8;
+        }
+        fseek(index, 4, SEEK_CUR);
+    }
+
+    unsigned int getIntFromBlockData(char * block, int ind){
+        unsigned int res = 0;
+        for(int i = 0; i < 4; i++){
+            res += ((unsigned char)block[ind + i]) << (8 * i);
+        }
+        return res;
+    }
+
+    unsigned int getIntFromIndex(FILE * index){
+        unsigned int res = 0;
+        for(int i = 0; i < 4; i++){
+            res += ((unsigned char)fgetc(index)) << (8 * i);
+        }
+        fseek(index, -4, SEEK_CUR);
+        return res;
     }
 
 public:
@@ -331,7 +360,9 @@ public:
         }
         
     }
-
+    // TODO: Still deleting some records
+        // ie. 11432159 can be found, but 11432121 cannot
+        // all records should be in the index
     // Given an ID, find the relevant record and print it
     Record findRecordById(int id) {
         
@@ -348,17 +379,17 @@ public:
 
         // Linear search through block for record with matching id
         for(int j = 0; j < blockData[0]; j++) {
-            if (blockData[2 + j * RECORD_SIZE] == id) {
+            if (getIntFromBlockData(blockData, 2 + j * RECORD_SIZE) == id) {
                 Record record = Record(
-                    std::vector<std::string> {
-                        std::to_string(id),
-                        std::string(blockData + 4 + j * RECORD_SIZE, 200),
-                        std::string(blockData + 204 + j * RECORD_SIZE, 500),
-                        std::to_string(blockData[3 + j * RECORD_SIZE])
+                    std::vector<std::string>{
+                        to_string(getIntFromBlockData(blockData, 2 + j * RECORD_SIZE)),
+                        std::string(blockData + 2 + 16 + j * RECORD_SIZE, 200),
+                        std::string(blockData + 2 + 216 + j * RECORD_SIZE, 500),
+                        to_string(getIntFromBlockData(blockData, 2 + 8 + j *RECORD_SIZE))
                     }
                 );
                 
-                record.print();
+                // record.print();
                 return record;
             }
 
@@ -373,5 +404,6 @@ public:
 
         // If no record found, throw error
         throw invalid_argument("Record not found");
+        // cout << "Record not found" << endl;
     }
 };
