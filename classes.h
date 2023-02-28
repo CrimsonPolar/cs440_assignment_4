@@ -84,12 +84,14 @@ private:
         // If the block is full, add overflow block
         if(blockData[0] == 5){
             // Create overflow block and update blockData
-            blockData[1] = block - (nextFreeBlock / BLOCK_SIZE);
+            blockData[1] = (nextFreeBlock / BLOCK_SIZE) - block;
+            fseek(index, BLOCK_SIZE * block, SEEK_SET);
+            fputc(blockData[1], index);
             nextFreeBlock += BLOCK_SIZE;
 
-            int newBlock = getBlock(block + blockData[1]);
+            int newBlock = block + blockData[1];
 
-            writeRecord(record, newBlock, blockData[0], index);
+            writeRecord(record, newBlock, 0, index);
             
         } else {
             writeRecord(record, block, blockData[0], index);
@@ -104,14 +106,12 @@ private:
             total += fgetc(index);
             
             // Check for overflow block
-            fseek(index, 1, SEEK_CUR); // Next byte is overflow offset
             int overflow = fgetc(index);
             while (overflow) {
                 // Seek to next overflow block's num records
-                fseek(index, BLOCK_SIZE * overflow - 1, SEEK_CUR);
+                fseek(index, BLOCK_SIZE * overflow - 2, SEEK_CUR);
                 total += fgetc(index);
                 
-                fseek(index, 1, SEEK_CUR); // Next byte is bucket's overflow offset
                 overflow = fgetc(index);
             }
         }
