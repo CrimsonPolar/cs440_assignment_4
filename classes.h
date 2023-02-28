@@ -82,13 +82,6 @@ private:
         char blockData[BLOCK_SIZE];
         FILE * index = fopen(fName.c_str(), "r+b");
 
-        if(n >= 6){
-            fseek(index, BLOCK_SIZE * 5, SEEK_SET);
-            resetBlockMem(blockData);
-            fread(blockData, sizeof(char), BLOCK_SIZE, index);   
-            cout << "hi"; 
-        }
-
         fseek(index, BLOCK_SIZE * block, SEEK_SET);
         resetBlockMem(blockData);
         fread(blockData, sizeof(char), BLOCK_SIZE, index);
@@ -189,7 +182,7 @@ private:
                         fread(destBlockData, sizeof(char), BLOCK_SIZE, index);
 
                         // if we put block in overflow block
-                        while(destBlockData[0] == 5 && destBlockData[1] != 0){
+                        while(destBlockData[1] != 0){
                             // read in overflow instead
                             destBlock += destBlockData[1];
                             fseek(index, BLOCK_SIZE * destBlock, SEEK_SET);
@@ -209,8 +202,11 @@ private:
                         resetBlockMem(destBlockData);
                         fread(destBlockData, sizeof(char), BLOCK_SIZE, index);
 
-                        // if block wasn't last
-                        if(k != blockData[0] - 1){
+
+                        
+
+                        // if record wasn't last
+                        if(k < blockData[0] - 1 && k < 5){
                             // move others down to preserve sanity
                             for(int l = k + 1; l < blockData[0] /*&& l <= 5*/; l++){
                                 temp = Record(
@@ -223,20 +219,21 @@ private:
                                 );
                                 writeRecord(temp, blockDirectory.at(j) + overflow, l - 1, index);
                             }
-                            // ensure loop doesn't break
                             k--;
-                            blockData[0]--;
                             // delete records at end just in case
                             // usually can't be accessed, but erase data
-                            fseek(index, BLOCK_SIZE * (blockDirectory.at(j) + overflow) + 2 + RECORD_SIZE * (blockData[0] - 1), SEEK_SET);
+                            
+                            fseek(index, BLOCK_SIZE * (blockDirectory.at(j) + overflow) + 2 + RECORD_SIZE * blockData[0], SEEK_SET);
                             for(int l = 0; l < RECORD_SIZE; l++){
                                 fputc(0, index);
                             }
                             
                         }
+                        // ensure loop doesn't break
                         //update count in index
                         fseek(index, BLOCK_SIZE * (blockDirectory.at(j) + overflow), SEEK_SET);
                         fputc(blockData[0] - 1, index);
+                        blockData[0]--;
                             
                     }
                 }
@@ -324,14 +321,14 @@ public:
         fclose(index);
 
         // Linear search through block for record with matching id
-        for(int i = 0; i < blockData[0]; i++) {
-            if (blockData[3 + i * RECORD_SIZE] == id) {
+        for(int j = 0; j < blockData[0]; j++) {
+            if (blockData[3 + j * RECORD_SIZE] == id) {
                 Record record = Record(
                     std::vector<std::string> {
                         std::to_string(id),
-                        std::to_string(blockData[4 + i * RECORD_SIZE]),
-                        std::string(blockData + 5 + i * RECORD_SIZE, 200),
-                        std::string(blockData + 205 + i * RECORD_SIZE, 500)
+                        std::to_string(blockData[4 + j * RECORD_SIZE]),
+                        std::string(blockData + 5 + j * RECORD_SIZE, 200),
+                        std::string(blockData + 205 + j * RECORD_SIZE, 500)
                     }
                 );
                 
@@ -340,11 +337,11 @@ public:
             }
 
             // If this is the last record in the block, check for overflow block
-            if(i == blockData[0] - 1 && blockData[1] != 0) {
+            if(j == blockData[0] - 1 && blockData[1] != 0) {
                 // Update blockData to overflow block and reset i
                 fseek(index, BLOCK_SIZE * blockData[1], SEEK_CUR);
                 fread(blockData, sizeof(char), BLOCK_SIZE, index);
-                i = -1; // i will be incremented to 0 at the end of the loop
+                j = -1; // i will be incremented to 0 at the end of the loop
             }
         }
 
