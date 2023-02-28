@@ -90,7 +90,7 @@ private:
         if(blockData[0] == 5){
             // Create overflow block and update blockData
             blockData[1] = (nextFreeBlock / BLOCK_SIZE) - block;
-            fseek(index, BLOCK_SIZE * block, SEEK_SET);
+            fseek(index, BLOCK_SIZE * block + 1, SEEK_SET);
             fputc(blockData[1], index);
             nextFreeBlock += BLOCK_SIZE;
 
@@ -181,14 +181,6 @@ private:
                         resetBlockMem(destBlockData);
                         fread(destBlockData, sizeof(char), BLOCK_SIZE, index);
 
-                        // if we put block in overflow block
-                        while(destBlockData[1] != 0){
-                            // read in overflow instead
-                            destBlock += destBlockData[1];
-                            fseek(index, BLOCK_SIZE * destBlock, SEEK_SET);
-                            resetBlockMem(destBlockData);
-                            fread(destBlockData, sizeof(char), BLOCK_SIZE, index);
-                        }
                         Record temp = Record(
                             std::vector<std::string>{
                                 std::to_string(blockData[2 + k * RECORD_SIZE]),
@@ -197,7 +189,28 @@ private:
                                 std::to_string(blockData[3 + k * RECORD_SIZE])
                             }
                         );
-                        writeRecord(temp, destBlock, destBlockData[0], index);
+                        // if an overflow block exists
+                        while(destBlockData[0] == 5 && destBlockData[1] != 0){
+                            // read in overflow instead
+                            destBlock += destBlockData[1];
+                            fseek(index, BLOCK_SIZE * destBlock, SEEK_SET);
+                            resetBlockMem(destBlockData);
+                            fread(destBlockData, sizeof(char), BLOCK_SIZE, index);
+                        }
+                        // if the block is full with no overflow
+                        if(destBlockData[0] == 5){
+                             // Create overflow block and update blockData
+                            destBlockData[1] = (nextFreeBlock / BLOCK_SIZE) - destBlock;
+                            fseek(index, BLOCK_SIZE * destBlock + 1, SEEK_SET);
+                            fputc(destBlockData[1], index);
+                            nextFreeBlock += BLOCK_SIZE;
+
+                            int newBlock = destBlock + destBlockData[1];
+
+                            writeRecord(temp, newBlock, 0, index);
+                        } else {
+                            writeRecord(temp, destBlock, destBlockData[0], index);
+                        }
                         fseek(index, BLOCK_SIZE * destBlock, SEEK_SET);
                         resetBlockMem(destBlockData);
                         fread(destBlockData, sizeof(char), BLOCK_SIZE, index);
@@ -205,10 +218,11 @@ private:
 
                         
 
+                        
                         // if record wasn't last
                         if(k < blockData[0] - 1 && k < 5){
                             // move others down to preserve sanity
-                            for(int l = k + 1; l < blockData[0] /*&& l <= 5*/; l++){
+                            for(int l = k + 1; l < blockData[0] && l <= 5; l++){
                                 temp = Record(
                                     std::vector<std::string>{
                                         std::to_string(blockData[2 + l * RECORD_SIZE]),
@@ -217,24 +231,31 @@ private:
                                         std::to_string(blockData[3 + l * RECORD_SIZE])
                                     }
                                 );
-                                writeRecord(temp, blockDirectory.at(j) + overflow, l - 1, index);
+                                writeRecord(temp, (blockDirectory.at(j) + overflow), l - 1, index);
+                                
                             }
                             k--;
                             // delete records at end just in case
                             // usually can't be accessed, but erase data
                             
-                            fseek(index, BLOCK_SIZE * (blockDirectory.at(j) + overflow) + 2 + RECORD_SIZE * blockData[0], SEEK_SET);
+                            fseek(index, BLOCK_SIZE * (blockDirectory.at(j) + overflow) + 2 + RECORD_SIZE * (k + 1), SEEK_SET);
                             for(int l = 0; l < RECORD_SIZE; l++){
                                 fputc(0, index);
                             }
                             
                         }
+                        
+                        
                         // ensure loop doesn't break
                         //update count in index
                         fseek(index, BLOCK_SIZE * (blockDirectory.at(j) + overflow), SEEK_SET);
                         fputc(blockData[0] - 1, index);
                         blockData[0]--;
-                            
+
+                        fseek(index, BLOCK_SIZE * (blockDirectory.at(j) + overflow), SEEK_SET);
+                        resetBlockMem(blockData);
+                        fread(blockData, sizeof(char), BLOCK_SIZE, index);
+
                     }
                 }
                 overflow += blockData[1];
@@ -244,6 +265,10 @@ private:
 
     // write record into index file
     void writeRecord(Record record, int blockNum, int recordNum, FILE * index){
+        if(recordNum > 4){
+            printf("awesome");
+            throw invalid_argument("This didn't work");
+        }
 
         fseek(index, BLOCK_SIZE * blockNum, SEEK_SET);
         fputc(recordNum + 1, index);
@@ -319,16 +344,17 @@ public:
         fseek(index, BLOCK_SIZE * block, SEEK_SET);
         fread(blockData, sizeof(char), BLOCK_SIZE, index);
         fclose(index);
+        printBlock(blockData);
 
         // Linear search through block for record with matching id
         for(int j = 0; j < blockData[0]; j++) {
-            if (blockData[3 + j * RECORD_SIZE] == id) {
+            if (blockData[2 + j * RECORD_SIZE] == id) {
                 Record record = Record(
                     std::vector<std::string> {
                         std::to_string(id),
-                        std::to_string(blockData[4 + j * RECORD_SIZE]),
-                        std::string(blockData + 5 + j * RECORD_SIZE, 200),
-                        std::string(blockData + 205 + j * RECORD_SIZE, 500)
+                        std::string(blockData + 4 + j * RECORD_SIZE, 200),
+                        std::string(blockData + 204 + j * RECORD_SIZE, 500),
+                        std::to_string(blockData[3 + j * RECORD_SIZE])
                     }
                 );
                 
