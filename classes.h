@@ -101,85 +101,94 @@ private:
         // Take neccessary steps if capacity is reached:
 		// increase n; increase i (if necessary); place records in the new bucket that may have been originally misplaced due to a bit flip
         if(average >= EXPAND_THRESH){
-            blockDirectory.push_back(nextFreeBlock/BLOCK_SIZE);
-            // Write blank block to end of index
-            fseek(index, BLOCK_SIZE * nextFreeBlock + BLOCK_SIZE - 1, SEEK_SET);
-            fputc(0, index);
-            // Update vars
-            n++;
-            nextFreeBlock += BLOCK_SIZE;
-            // if n > 2^i
-            //  add new bit
-            if(n > (1 << i)){
-                i++;
-            }
-            //TODO: check entries for if they're misplaced as per slides 61, 62 of indexing.pdf
-            for(int j = 0; j < n; j++){
-                int overflow = 0;
-                do {
-                    fseek(index, BLOCK_SIZE * blockDirectory.at(j + overflow), SEEK_SET);
-                    fread(blockData, sizeof(char), BLOCK_SIZE, index);
-                    // for every entry
-                    for(int k = 0; k < blockData[0]; k++){
-                        int destBlock = getBlock(blockData[2 + RECORD_SIZE * k]);
-                        // if the block an record should be hashed to is different to the one it is currently in
-                        if(blockDirectory.at(j) != destBlock){
-                            // Re-place record
-                            char destBlockData[4096];
-                            
-                            fseek(index, BLOCK_SIZE * destBlock, SEEK_SET);
-                            fread(destBlockData, sizeof(char), BLOCK_SIZE, index);
-
-                            // if we put block in overflow block
-                            while(destBlockData[0] == 5 && destBlockData[1] != 0){
-                                // read in overflow instead
-                                fseek(index, BLOCK_SIZE * (destBlock + destBlockData[1]), SEEK_SET);
-                                fread(destBlockData, sizeof(char), BLOCK_SIZE, index);
-                                destBlock += destBlockData[1];
-                            }
-                            Record temp = Record(
-                                std::vector<std::string>{
-                                    std::to_string(blockData[2 + k * RECORD_SIZE]),
-                                    std::to_string(blockData[3 + k * RECORD_SIZE]),
-                                    std::string(blockData + 4 + k * RECORD_SIZE, 200),
-                                    std::string(blockData + 204 + k * RECORD_SIZE, 500)
-                                }
-                            );
-                            writeRecord(temp, destBlock, blockData[0], index);
-
-                            // if block wasn't last
-                            if(k != blockData[0] - 1){
-                                // move others down to preserve sanity
-                                for(int l = k + 1; l < blockData[0]; l++){
-                                    temp = Record(
-                                        std::vector<std::string>{
-                                            std::to_string(blockData[2 + l * RECORD_SIZE]),
-                                            std::to_string(blockData[3 + l * RECORD_SIZE]),
-                                            std::string(blockData + 4 + l * RECORD_SIZE, 200),
-                                            std::string(blockData + 204 + l * RECORD_SIZE, 500)
-                                        }
-                                    );
-                                    writeRecord(temp, j + overflow, l - 1, index);
-                                }
-                                // delete records at end just in case
-                                // usually can't be accessed, but erase data
-                                fseek(index, BLOCK_SIZE * (j + overflow) + 2 + RECORD_SIZE * (blockData[0] - 1), SEEK_SET);
-                                for()
-                                
-                            }
-                            //update count in index
-                            fseek(index, BLOCK_SIZE * (j + overflow), SEEK_SET);
-                            fputc(blockData[0] - 1, index);
-                                
-                        }
-                    }
-                    overflow += blockData[1];
-                } while(blockData[0] == 5 && blockData[1] != 0);
-            }
-            
+            expandIndex(index, blockData);
         }
 
         fclose(index);
+    }
+
+
+    void expandIndex(FILE * index, char * blockData){
+        blockDirectory.push_back(nextFreeBlock/BLOCK_SIZE);
+        // Write blank block to end of index
+        fseek(index, BLOCK_SIZE * nextFreeBlock + BLOCK_SIZE - 1, SEEK_SET);
+        fputc(0, index);
+        // Update vars
+        n++;
+        nextFreeBlock += BLOCK_SIZE;
+        // if n > 2^i
+        if(n > (1 << i)){
+            i++;
+        }
+        // for every block
+        for(int j = 0; j < n; j++){
+            int overflow = 0;
+            // loop for overflow checking, normally only do this once but supports sequential overflow blocks
+            do {
+                fseek(index, BLOCK_SIZE * (blockDirectory.at(j) + overflow), SEEK_SET);
+                fread(blockData, sizeof(char), BLOCK_SIZE, index);
+                // for every record
+                for(int k = 0; k < blockData[0]; k++){
+                    int destBlock = getBlock(blockData[2 + RECORD_SIZE * k]);
+                    // if the block the current record should be hashed to is different to the one it is currently in
+                    if(blockDirectory.at(j) != destBlock){
+                        // Replace record
+
+                        char destBlockData[4096]; // 2nd block in memory
+                        fseek(index, BLOCK_SIZE * destBlock, SEEK_SET);
+                        fread(destBlockData, sizeof(char), BLOCK_SIZE, index);
+
+                        // if we put block in overflow block
+                        while(destBlockData[0] == 5 && destBlockData[1] != 0){
+                            // read in overflow instead
+                            destBlock += destBlockData[1];
+                            fseek(index, BLOCK_SIZE * destBlock, SEEK_SET);
+                            fread(destBlockData, sizeof(char), BLOCK_SIZE, index);
+                        }
+                        Record temp = Record(
+                            std::vector<std::string>{
+                                std::to_string(blockData[2 + k * RECORD_SIZE]),
+                                std::string(blockData + 4 + k * RECORD_SIZE, 200),
+                                std::string(blockData + 204 + k * RECORD_SIZE, 500),
+                                std::to_string(blockData[3 + k * RECORD_SIZE])
+                            }
+                        );
+                        writeRecord(temp, destBlock, blockData[0], index);
+
+                        // if block wasn't last
+                        if(k != blockData[0] - 1){
+                            // move others down to preserve sanity
+                            for(int l = k + 1; l < blockData[0]; l++){
+                                temp = Record(
+                                    std::vector<std::string>{
+                                        std::to_string(blockData[2 + l * RECORD_SIZE]),
+                                        std::string(blockData + 4 + l * RECORD_SIZE, 200),
+                                        std::string(blockData + 204 + l * RECORD_SIZE, 500),
+                                        std::to_string(blockData[3 + l * RECORD_SIZE])
+                                    }
+                                );
+                                writeRecord(temp, blockDirectory.at(j) + overflow, l - 1, index);
+                            }
+                            // ensure loop doesn't break
+                            k--;
+                            blockData[0]--;
+                            // delete records at end just in case
+                            // usually can't be accessed, but erase data
+                            fseek(index, BLOCK_SIZE * (blockDirectory.at(j) + overflow) + 2 + RECORD_SIZE * (blockData[0] - 1), SEEK_SET);
+                            for(int l = 0; l < RECORD_SIZE; l++){
+                                fputc(0, index);
+                            }
+                            
+                        }
+                        //update count in index
+                        fseek(index, BLOCK_SIZE * (j + overflow), SEEK_SET);
+                        fputc(blockData[0] - 1, index);
+                            
+                    }
+                }
+                overflow += blockData[1];
+            } while(blockData[0] == 5 && blockData[1] != 0);
+        }
     }
 
     // write record into index file
