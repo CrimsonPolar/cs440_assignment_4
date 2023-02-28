@@ -83,7 +83,14 @@ private:
 
         // If the block is full, add overflow block
         if(blockData[0] == 5){
-            // TODO: implement
+            // Create overflow block and update blockData
+            blockData[1] = block - (nextFreeBlock / BLOCK_SIZE);
+            nextFreeBlock += BLOCK_SIZE;
+
+            int newBlock = getBlock(block + blockData[1]);
+
+            writeRecord(record, newBlock, blockData[0], index);
+            
         } else {
             writeRecord(record, block, blockData[0], index);
         }
@@ -95,7 +102,18 @@ private:
         for(int i = 0; i < n; i++){
             fseek(index, BLOCK_SIZE * blockDirectory.at(i), SEEK_SET);
             total += fgetc(index);
-            // TODO: make sure this doesn't miscount overflow blocks
+            
+            // Check for overflow block
+            fseek(index, 1, SEEK_CUR); // Next byte is overflow offset
+            int overflow = fgetc(index);
+            while (overflow) {
+                // Seek to next overflow block's num records
+                fseek(index, BLOCK_SIZE * overflow - 1, SEEK_CUR);
+                total += fgetc(index);
+                
+                fseek(index, 1, SEEK_CUR); // Next byte is bucket's overflow offset
+                overflow = fgetc(index);
+            }
         }
         float average = total / (n * 5);
         // Take neccessary steps if capacity is reached:
@@ -221,7 +239,7 @@ public:
             // If this is the last record in the block, check for overflow block
             if(i == blockData[0] - 1 && blockData[1] != 0) {
                 // Update blockData to overflow block and reset i
-                fseek(index, BLOCK_SIZE * blockData[1], SEEK_SET);
+                fseek(index, BLOCK_SIZE * blockData[1], SEEK_CUR);
                 fread(blockData, sizeof(char), BLOCK_SIZE, index);
                 i = -1; // i will be incremented to 0 at the end of the loop
             }
