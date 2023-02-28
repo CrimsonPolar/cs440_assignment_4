@@ -221,7 +221,7 @@ public:
             // If this is the last record in the block, check for overflow block
             if(i == blockData[0] - 1 && blockData[1] != 0) {
                 // Update blockData to overflow block and reset i
-                fseek(index, BLOCK_SIZE * blockData[1], SEEK_SET);
+                fseek(index, BLOCK_SIZE * blockData[1], SEEK_CUR);
                 fread(blockData, sizeof(char), BLOCK_SIZE, index);
                 i = -1; // i will be incremented to 0 at the end of the loop
             }
