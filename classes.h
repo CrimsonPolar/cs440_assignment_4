@@ -70,6 +70,10 @@ private:
         return blockDirectory.at(LSBs);
     }
 
+    void resetBlockMem(char * block){
+        memset(block, 0, BLOCK_SIZE);
+    }
+
     // Insert new record into index
     void insertRecord(Record record) {
 
@@ -78,7 +82,15 @@ private:
         char blockData[BLOCK_SIZE];
         FILE * index = fopen(fName.c_str(), "r+b");
 
+        if(n >= 6){
+            fseek(index, BLOCK_SIZE * 5, SEEK_SET);
+            resetBlockMem(blockData);
+            fread(blockData, sizeof(char), BLOCK_SIZE, index);   
+            cout << "hi"; 
+        }
+
         fseek(index, BLOCK_SIZE * block, SEEK_SET);
+        resetBlockMem(blockData);
         fread(blockData, sizeof(char), BLOCK_SIZE, index);
 
         // If the block is full, add overflow block
@@ -105,6 +117,8 @@ private:
             fseek(index, BLOCK_SIZE * blockDirectory.at(j), SEEK_SET);
             total += fgetc(index);
             
+            /* Don't want to check overflows
+
             // Check for overflow block
             int overflow = fgetc(index);
             while (overflow) {
@@ -114,6 +128,7 @@ private:
                 
                 overflow = fgetc(index);
             }
+            */
         }
         float average = total / (n * 5);
         // Take neccessary steps if capacity is reached:
@@ -123,6 +138,20 @@ private:
         }
 
         fclose(index);
+    }
+
+    void printBlock(char * r){
+        cout << endl << r[0] << " " << r[1] << endl;
+        for(int k = 0; k < r[0]; k++){
+        cout << endl;
+        Record(
+            std::vector<std::string>{
+                std::to_string(r[2 + k * RECORD_SIZE]),
+                std::string(r + 4 + k * RECORD_SIZE, 200),
+                std::string(r + 204 + k * RECORD_SIZE, 500),
+                std::to_string(r[3 + k * RECORD_SIZE])
+            }
+        ).print();}
     }
 
 
@@ -144,7 +173,9 @@ private:
             // loop for overflow checking, normally only do this once but supports sequential overflow blocks
             do {
                 fseek(index, BLOCK_SIZE * (blockDirectory.at(j) + overflow), SEEK_SET);
+                resetBlockMem(blockData);
                 fread(blockData, sizeof(char), BLOCK_SIZE, index);
+                // printBlock(blockData);
                 // for every record
                 for(int k = 0; k < blockData[0]; k++){
                     int destBlock = getBlock(blockData[2 + RECORD_SIZE * k]);
@@ -154,6 +185,7 @@ private:
 
                         char destBlockData[4096]; // 2nd block in memory
                         fseek(index, BLOCK_SIZE * destBlock, SEEK_SET);
+                        resetBlockMem(destBlockData);
                         fread(destBlockData, sizeof(char), BLOCK_SIZE, index);
 
                         // if we put block in overflow block
@@ -161,6 +193,7 @@ private:
                             // read in overflow instead
                             destBlock += destBlockData[1];
                             fseek(index, BLOCK_SIZE * destBlock, SEEK_SET);
+                            resetBlockMem(destBlockData);
                             fread(destBlockData, sizeof(char), BLOCK_SIZE, index);
                         }
                         Record temp = Record(
@@ -171,12 +204,15 @@ private:
                                 std::to_string(blockData[3 + k * RECORD_SIZE])
                             }
                         );
-                        writeRecord(temp, destBlock, blockData[0], index);
+                        writeRecord(temp, destBlock, destBlockData[0], index);
+                        fseek(index, BLOCK_SIZE * destBlock, SEEK_SET);
+                        resetBlockMem(destBlockData);
+                        fread(destBlockData, sizeof(char), BLOCK_SIZE, index);
 
                         // if block wasn't last
                         if(k != blockData[0] - 1){
                             // move others down to preserve sanity
-                            for(int l = k + 1; l < blockData[0]; l++){
+                            for(int l = k + 1; l < blockData[0] /*&& l <= 5*/; l++){
                                 temp = Record(
                                     std::vector<std::string>{
                                         std::to_string(blockData[2 + l * RECORD_SIZE]),
@@ -199,7 +235,7 @@ private:
                             
                         }
                         //update count in index
-                        fseek(index, BLOCK_SIZE * (j + overflow), SEEK_SET);
+                        fseek(index, BLOCK_SIZE * (blockDirectory.at(j) + overflow), SEEK_SET);
                         fputc(blockData[0] - 1, index);
                             
                     }
@@ -220,7 +256,7 @@ private:
         fputc(record.manager_id, index);
         // Write name and adjust file pointer based on length 
         fputs(record.name.c_str(), index);
-        fseek(index, 200 - record.name.length(), SEEK_CUR);
+        fseek(index, BLOCK_SIZE * blockNum + 2 + RECORD_SIZE * recordNum + 202, SEEK_SET);
         fputs(record.bio.c_str(), index);
     }
 
