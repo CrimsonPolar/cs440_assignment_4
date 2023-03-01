@@ -87,20 +87,29 @@ private:
         resetBlockMem(blockData);
         fread(blockData, sizeof(char), BLOCK_SIZE, index);
 
-        // If the block is full, add overflow block
-        if(blockData[0] == 5){
+        int overflow = 0;
+        // if the block is full and there exists an overflow
+        while(blockData[0] == 5 && blockData[1] != 0){
+            overflow += blockData[1];
+
+            fseek(index, BLOCK_SIZE * (block + overflow), SEEK_SET);
+            resetBlockMem(blockData);
+            fread(blockData, sizeof(char), BLOCK_SIZE, index);
+        }
+        // If the block is full and no overflow block exists, add overflow block
+        if(blockData[0] == 5 && blockData[1] == 0){
             // Create overflow block and update blockData
-            blockData[1] = (nextFreeBlock / BLOCK_SIZE) - block;
-            fseek(index, BLOCK_SIZE * block + 1, SEEK_SET);
+            blockData[1] = (nextFreeBlock / BLOCK_SIZE) - (block + overflow);
+            fseek(index, BLOCK_SIZE * (block + overflow) + 1, SEEK_SET);
             fputc(blockData[1], index);
             nextFreeBlock += BLOCK_SIZE;
 
-            int newBlock = block + blockData[1];
+            int newBlock = block + overflow + blockData[1];
 
             writeRecord(record, newBlock, 0, index);
             
         } else {
-            writeRecord(record, block, blockData[0], index);
+            writeRecord(record, block + overflow, blockData[0], index);
         }
         numRecords++;
 
@@ -125,6 +134,7 @@ private:
             */
         }
         float average = total / (n * 5);
+
         // Take neccessary steps if capacity is reached:
 		// increase n; increase i (if necessary); place records in the new bucket that may have been originally misplaced due to a bit flip
         if(average >= EXPAND_THRESH){
@@ -134,6 +144,7 @@ private:
         fclose(index);
     }
 
+    // Debug function for printing a block contained in memory
     void printBlock(char * r){
         cout << endl << r[0] << " " << r[1] << endl;
         for(int k = 0; k < r[0]; k++){
@@ -149,7 +160,11 @@ private:
         }
     }
 
-
+    
+    
+    //  Expands index; only executed when capacity of non-overflow is >70%
+    //  This code is really janky and bad, but it works
+    //  Desperetely needs cleaning
     void expandIndex(FILE * index, char * blockData){
         blockDirectory.push_back(nextFreeBlock/BLOCK_SIZE);
         // Write blank block to end of index
@@ -158,19 +173,21 @@ private:
         // Update vars
         n++;
         nextFreeBlock += BLOCK_SIZE;
+
         // if n > 2^i
         if(n > (1 << i)){
             i++;
         }
-        // for every block
+        // for every non-overflow block
         for(int j = 0; j < n; j++){
             int overflow = 0;
             // loop for overflow checking, normally only do this once but supports sequential overflow blocks
             do {
+                // "+ overflow uses" the offset to reduce calculations as we can simply add the offset to the current block number to get the overflow block
                 fseek(index, BLOCK_SIZE * (blockDirectory.at(j) + overflow), SEEK_SET);
                 resetBlockMem(blockData);
                 fread(blockData, sizeof(char), BLOCK_SIZE, index);
-                // printBlock(blockData);
+
                 // for every record
                 for(int k = 0; k < blockData[0]; k++){
                     int destBlock = getBlock(getIntFromBlockData(blockData, 2 + k * RECORD_SIZE));
@@ -213,16 +230,12 @@ private:
                         } else {
                             writeRecord(temp, destBlock, destBlockData[0], index);
                         }
-                        fseek(index, BLOCK_SIZE * destBlock, SEEK_SET);
-                        resetBlockMem(destBlockData);
-                        fread(destBlockData, sizeof(char), BLOCK_SIZE, index);
+                        // Will need to be done at somepoint to preserve loop conditions, done here for less calculation down the line
+                        blockData[0]--;
 
-
-                        
-
-                        
+                    
                         // if record wasn't last
-                        if(k < blockData[0] - 1 && k < 5){
+                        if(k < blockData[0] && k < 5){
                             // move others down to preserve sanity
                             for(int l = k + 1; l < blockData[0] && l <= 5; l++){
                                 temp = Record(
@@ -236,12 +249,12 @@ private:
                                 writeRecord(temp, blockDirectory.at(j) + overflow, l - 1, index);
                                 
                             }
-                            // ensure loop doesn't break
+                            // ensure loop conditions don't break
                             k--;
 
                             // delete records at end just in case
                             // usually can't be accessed, but erase data anyway
-                            fseek(index, BLOCK_SIZE * (blockDirectory.at(j) + overflow) + 2 + RECORD_SIZE * blockData[0], SEEK_SET);
+                            fseek(index, 2 + BLOCK_SIZE * (blockDirectory.at(j) + overflow) + RECORD_SIZE * (blockData[0]), SEEK_SET);
                             for(int l = 0; l < RECORD_SIZE; l++){
                                 fputc(0, index);
                             }
@@ -252,8 +265,8 @@ private:
                         
                         // update count in index
                         fseek(index, BLOCK_SIZE * (blockDirectory.at(j) + overflow), SEEK_SET);
-                        fputc(blockData[0] - 1, index);
-                        blockData[0]--;
+                        fputc(blockData[0], index);
+                        
 
                         fseek(index, BLOCK_SIZE * (blockDirectory.at(j) + overflow), SEEK_SET);
                         resetBlockMem(blockData);
@@ -360,9 +373,7 @@ public:
         }
         
     }
-    // TODO: Still deleting some records
-        // ie. 11432159 can be found, but 11432121 cannot
-        // all records should be in the index
+
     // Given an ID, find the relevant record and print it
     Record findRecordById(int id) {
         
@@ -374,34 +385,37 @@ public:
         FILE * index = fopen(fName.c_str(), "rb");
         fseek(index, BLOCK_SIZE * block, SEEK_SET);
         fread(blockData, sizeof(char), BLOCK_SIZE, index);
-        fclose(index);
-        printBlock(blockData);
 
+        // printBlock(blockData);
+
+        int overflow = 0;
         // Linear search through block for record with matching id
-        for(int j = 0; j < blockData[0]; j++) {
-            if (getIntFromBlockData(blockData, 2 + j * RECORD_SIZE) == id) {
-                Record record = Record(
-                    std::vector<std::string>{
-                        to_string(getIntFromBlockData(blockData, 2 + j * RECORD_SIZE)),
-                        std::string(blockData + 2 + 16 + j * RECORD_SIZE, 200),
-                        std::string(blockData + 2 + 216 + j * RECORD_SIZE, 500),
-                        to_string(getIntFromBlockData(blockData, 2 + 8 + j *RECORD_SIZE))
-                    }
-                );
-                
-                // record.print();
-                return record;
-            }
+        do{
+            fseek(index, BLOCK_SIZE * (block + overflow), SEEK_CUR);
+            fread(blockData, sizeof(char), BLOCK_SIZE, index);
 
-            // If this is the last record in the block, check for overflow block
-            if(j == blockData[0] - 1 && blockData[1] != 0) {
-                // Update blockData to overflow block and reset i
-                fseek(index, BLOCK_SIZE * blockData[1], SEEK_CUR);
-                fread(blockData, sizeof(char), BLOCK_SIZE, index);
-                j = -1; // i will be incremented to 0 at the end of the loop
-            }
-        }
+            for(int j = 0; j < blockData[0]; j++) {
+                if (getIntFromBlockData(blockData, 2 + j * RECORD_SIZE) == id) {
+                    Record record = Record(
+                        std::vector<std::string>{
+                            to_string(getIntFromBlockData(blockData, 2 + j * RECORD_SIZE)),
+                            std::string(blockData + 2 + 16 + j * RECORD_SIZE, 200),
+                            std::string(blockData + 2 + 216 + j * RECORD_SIZE, 500),
+                            to_string(getIntFromBlockData(blockData, 2 + 8 + j *RECORD_SIZE))
+                        }
+                    );
+                    
+                    // record.print();
+                    fclose(index);
+                    return record;
+                }  
 
+            }
+            overflow += blockData[1];
+        } while(blockData[1] != 0);
+
+
+        fclose(index);
         // If no record found, throw error
         throw invalid_argument("Record not found");
         // cout << "Record not found" << endl;
